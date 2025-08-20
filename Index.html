@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <title>Gắn chữ ký vào sheet Form</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root {
+      --bg:#f6f9ff;
+      --card:#ffffff;
+      --muted:#64748b;
+      --accent:#3b82f6;
+      --ink:#ffffff;
+      --stroke:#dbeafe;
+      --text:#0f172a;
+    }
+    body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);margin:0;padding:24px}
+    .wrap{max-width:980px;margin:0 auto}
+    .card{background:var(--card);border-radius:16px;padding:20px;box-shadow:0 10px 30px rgba(2,6,23,.08)}
+    h1{margin:0 0 8px}
+    label{display:block;margin:14px 0 6px}
+    input[type="file"],button,select{width:100%;padding:12px;border-radius:12px;border:1px solid var(--stroke);background:#ffffff;color:var(--text)}
+    .row{display:grid;grid-template-columns:1fr;gap:16px}
+    .grid-5{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+    @media (max-width:980px){ .grid-5{grid-template-columns:1fr 1fr} }
+    @media (max-width:640px){ .grid-5{grid-template-columns:1fr} }
+    .box{background:#ffffff;border:1px solid var(--stroke);border-radius:12px;padding:12px}
+    .box h3{margin:0 0 8px;font-size:14px;color:#334155}
+    .actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px}
+    .btn{background:#e6f0ff;border:0;padding:12px 16px;border-radius:12px;cursor:pointer;color:#1e3a8a}
+    .btn.primary{background:var(--accent);color:var(--ink);font-weight:700}
+    .pill{display:inline-block;background:#eff6ff;border:1px solid var(--stroke);padding:6px 10px;border-radius:999px;font-size:12px;color:#1e3a8a}
+    .log{white-space:pre-wrap;background:#f8fafc;border-radius:12px;padding:12px;min-height:80px;border:1px solid var(--stroke);margin-top:8px;color:var(--text)}
+    .ok{color:#16a34a}.warn{color:#d97706}.err{color:#ef4444}
+    .inline{display:flex;gap:10px;align-items:center}
+    .inline > *{flex:1}
+    .hidden{display:none !important}
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Gắn chữ ký vào sheet "Form"</h1>
+
+      <div class="row">
+        <div>
+          <label>Excel (.xlsx)</label>
+          <input type="file" id="excelFile" accept=".xlsx" />
+        </div>
+
+        <div class="hidden">
+          <label>Thư mục chữ ký</label>
+          <div class="inline">
+            <button class="btn" id="pickFolderBtn">Chọn thư mục</button>
+            <span id="folderHint" class="pill">Chưa chọn</span>
+          </div>
+          <input type="file" id="dirPicker" webkitdirectory directory multiple style="display:none" />
+        </div>
+
+        <div>
+          <div class="grid-5 hidden">
+            <div class="box">
+              <h3>Người lập → B31</h3>
+              <select id="sel-nguoilap"></select>
+            </div>
+            <div class="box">
+              <h3>Kiểm tra → I31</h3>
+              <select id="sel-kiemtra"></select>
+            </div>
+            <div class="box">
+              <h3>Xác nhận 1 → P31</h3>
+              <select id="sel-xn1"></select>
+            </div>
+            <div class="box">
+              <h3>Xác nhận 2 → W31</h3>
+              <select id="sel-xn2"></select>
+            </div>
+            <div class="box">
+              <h3>Phê duyệt → AD31</h3>
+              <select id="sel-pheduyet"></select>
+            </div>
+          </div>
+
+          <div class="box">
+            <h3>Người lập</h3>
+            <select id="personNguoiLap"></select>
+          </div>
+          <div class="actions">
+            <button class="btn primary" id="runBtn">Gắn & tải</button>
+          </div>
+        </div>
+
+        <div>
+          <div id="log" class="log"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function() {
+  const $ = s => document.querySelector(s);
+  const logBox = $("#log");
+  const excelInput = $("#excelFile");
+  const pickFolderBtn = $("#pickFolderBtn");
+  const dirPicker = $("#dirPicker");
+  const folderHint = $("#folderHint");
+  const runBtn = $("#runBtn");
+  const personNguoiLap = $("#personNguoiLap");
+
+  const selNguoiLap = $("#sel-nguoilap");
+  const selKiemTra = $("#sel-kiemtra");
+  const selXN1 = $("#sel-xn1");
+  const selXN2 = $("#sel-xn2");
+  const selPheDuyet = $("#sel-pheduyet");
+
+  const ROLE_CELLS = {
+    nguoilap: "B31",
+    kiemtra: "I31",
+    xn1: "P31",
+    xn2: "W31",
+    pheduyet: "AD31"
+  };
+  const ROLE_NAME_CELLS = {
+    nguoilap: "B37",
+    kiemtra: "I37",
+    xn1: "P37",
+    xn2: "W37",
+    pheduyet: "AD37"
+  };
+  const ROLE_DATE_CELLS = {
+    nguoilap: "B38",
+    kiemtra: "I38",
+    xn1: "P38",
+    xn2: "W38",
+    pheduyet: "AD38"
+  };
+  const DEFAULT_WEBHOOK_URL = "https://iatzhxxuk.tino.page/webhook-test/f362f859-ee96-4d68-a3c8-7c6162fd80fc";
+
+  const NGUOI_LAP_LIST = [
+    "Bùi Đăng Quốc Huy",
+    "Đào Tuấn Kỳ",
+    "Đỗ Quang Long",
+    "Đỗ Thế Cường",
+    "Hà Mỹ Linh",
+    "Lại Quốc Lộc",
+    "Lê Ngọc Ánh",
+    "Lê Thị Thảo",
+    "Nguyễn Hữu Thịnh",
+    "Nguyễn Thị Hiền",
+    "Phạm Thành Trung Kiên",
+    "Phạm Thị Minh",
+    "Thái Thị Giang",
+    "Trần Hiếu Nghĩa",
+    "Vũ Thị Hằng",
+    "Vũ Thị Thanh Hiền"
+  ];
+  function fillNguoiLapSelect() {
+    if (!personNguoiLap) return;
+    personNguoiLap.innerHTML = "";
+    const opt0 = document.createElement("option");
+    opt0.value = "";
+    opt0.textContent = "-- Chọn người lập --";
+    personNguoiLap.appendChild(opt0);
+    for (const name of NGUOI_LAP_LIST) {
+      const o = document.createElement("option");
+      o.value = o.textContent = name;
+      personNguoiLap.appendChild(o);
+    }
+  }
+
+  function log(msg, cls="") {
+    const line = document.createElement("div");
+    if (cls) line.className = cls;
+    line.textContent = msg;
+    logBox.appendChild(line);
+    logBox.scrollTop = logBox.scrollHeight;
+  }
+  function clearLog(){ logBox.textContent=""; }
+
+  // file store from selected folder: filenameLower -> File
+  let folderFiles = new Map();
+  let fileListDisplay = [];
+
+  function extFromMime(mime) {
+    if (mime === "image/png") return "png";
+    if (mime === "image/jpeg" || mime === "image/jpg") return "jpeg";
+    return null;
+  }
+  function extFromName(name) {
+    const l = String(name || "").toLowerCase();
+    if (l.endsWith(".png")) return "png";
+    if (l.endsWith(".jpg") || l.endsWith(".jpeg")) return "jpeg";
+    return null;
+  }
+
+  function baseName(name) {
+    const s = String(name || "");
+    const i = s.lastIndexOf(".");
+    return i > -1 ? s.slice(0, i) : s;
+  }
+
+  function arrayBufferToBase64(ab) {
+    const bytes = new Uint8Array(ab);
+    let bin = "";
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    }
+    return btoa(bin);
+  }
+
+  function a1ToRC(a1) {
+    const m = String(a1).toUpperCase().match(/^([A-Z]+)(\d+)$/);
+    if (!m) throw new Error("Ô không hợp lệ: " + a1);
+    const letters = m[1], row = parseInt(m[2],10);
+    let col = 0;
+    for (let i=0;i<letters.length;i++) col = col*26 + (letters.charCodeAt(i)-64);
+    return { row, col };
+  }
+
+  function randomCode(len=12) {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+    let s = "";
+    for (let i=0;i<len;i++) s += chars[Math.floor(Math.random()*chars.length)];
+    return s;
+  }
+
+  function random6() {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let s = "";
+    for (let i=0;i<6;i++) s += chars[Math.floor(Math.random()*chars.length)];
+    return s;
+  }
+  function generateSecurityCode() {
+    const now = new Date();
+    const dd = String(now.getDate()).padStart(2, "0");
+    const mm = String(now.getMonth()+1).padStart(2, "0");
+    const yy = String(now.getFullYear()).slice(-2);
+    return `DQA-${dd}${mm}${yy}-${random6()}`;
+  }
+
+  function parseDDMMYYYY(s) {
+    if (!s) return null;
+    const m = String(s).match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{4})$/);
+    if (!m) return null;
+    const dd = parseInt(m[1], 10), mm = parseInt(m[2], 10), yyyy = parseInt(m[3], 10);
+    return new Date(yyyy, mm - 1, dd);
+  }
+  function extFromContentType(ct) {
+    if (!ct) return null;
+    if (/png/i.test(ct)) return "png";
+    if (/jpe?g/i.test(ct)) return "jpeg";
+    return null;
+  }
+  function extFromUrl(u) {
+    const l = String(u || "").toLowerCase();
+    if (l.endsWith(".png")) return "png";
+    if (l.endsWith(".jpg") || l.endsWith(".jpeg")) return "jpeg";
+    return null;
+  }
+  function getApiPayloadFromUrl() {
+    const sp = new URLSearchParams(location.search);
+    const p = sp.get("payload");
+    if (!p) return null;
+    try {
+      const json = atob(decodeURIComponent(p));
+      return JSON.parse(json);
+    } catch (e) {
+      log("Payload không hợp lệ.", "err");
+      return null;
+    }
+  }
+  async function blobToBase64Ext(resp, urlHint) {
+    const ct = resp.headers.get("content-type");
+    const ext = extFromContentType(ct) || extFromUrl(urlHint) || "png";
+    const ab = await resp.arrayBuffer();
+    const base64 = arrayBufferToBase64(ab);
+    return { base64, ext };
+  }
+  async function runN8nFlow(payload) {
+    clearLog();
+    log("API mode: nhận dữ liệu từ n8n...", "m");
+    if (!payload?.xlsxUrl) throw new Error("Thiếu xlsxUrl");
+    const webhookUrl = payload.webhookUrl || DEFAULT_WEBHOOK_URL;
+    if (!webhookUrl) throw new Error("Thiếu webhookUrl");
+    const wb = new ExcelJS.Workbook();
+    const xresp = await fetch(payload.xlsxUrl);
+    if (!xresp.ok) throw new Error("Không tải được XLSX");
+    const xbuf = await xresp.arrayBuffer();
+    await wb.xlsx.load(xbuf);
+    const ws = wb.getWorksheet("Form");
+    if (!ws) throw new Error('Không tìm thấy sheet "Form".');
+
+    const roles = payload.roles || {};
+    const size = { width: 120, height: 90 };
+    for (const role of Object.keys(ROLE_CELLS)) {
+      const data = roles[role];
+      if (!data || !data.imageUrl) continue;
+      const r = await fetch(data.imageUrl);
+      if (!r.ok) throw new Error("Không tải được ảnh: " + role);
+      const { base64, ext } = await blobToBase64Ext(r, data.imageUrl);
+      const imageId = wb.addImage({ base64, extension: ext });
+
+      const cell = ROLE_CELLS[role];
+      const { row, col } = a1ToRC(cell);
+      ws.addImage(imageId, { tl: { col: col - 1, row: row - 1 }, ext: size, editAs: "oneCell" });
+
+      const nameCell = ROLE_NAME_CELLS[role];
+      ws.getCell(nameCell).value = data.name || baseName(data.imageUrl || "");
+      const dateCell = ROLE_DATE_CELLS[role];
+      const d = parseDDMMYYYY(data.date);
+      if (d) {
+        ws.getCell(dateCell).value = d;
+        ws.getCell(dateCell).numFmt = "DD/MM/YYYY";
+      }
+      log(`Gắn ${role} vào ${cell}`, "ok");
+    }
+
+    const code = generateSecurityCode();
+    ws.getCell("A39").value = code;
+
+    const out = await wb.xlsx.writeBuffer();
+    const fnameOut = (payload.outputName || "output_signed") + ".xlsx";
+    const blob = new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+
+    // Lấy tên người lập để gửi thành field thường
+    const nguoilapName = (roles.nguoilap && (roles.nguoilap.name || baseName(roles.nguoilap.imageUrl || ""))) || "";
+
+    const fd = new FormData();
+    fd.append("file", blob, fnameOut);
+    if (nguoilapName) fd.append("nguoilap", nguoilapName);
+    fd.append("metadata", new Blob([JSON.stringify({
+      code,
+      rolesProcessed: Object.keys(roles).filter(k => roles[k]?.imageUrl)
+    })], { type: "application/json" }), "metadata.json");
+
+    const method = payload.method || "POST";
+    const wh = await fetch(webhookUrl, { method, body: fd });
+    if (!wh.ok) throw new Error("Webhook trả lỗi: " + wh.status);
+    log("Đã gửi file về webhook.", "ok");
+  }
+  async function maybeRunApi() {
+    const p = getApiPayloadFromUrl();
+    if (!p) return;
+    try { await runN8nFlow(p); } catch(e) { log("Lỗi API: " + e.message, "err"); }
+  }
+
+  function fillSelects() {
+    const selects = [selNguoiLap, selKiemTra, selXN1, selXN2, selPheDuyet];
+    for (const s of selects) {
+      s.innerHTML = "";
+      const opt0 = document.createElement("option");
+      opt0.value = "";
+      opt0.textContent = "-- Chọn ảnh --";
+      s.appendChild(opt0);
+      for (const it of fileListDisplay) {
+        const o = document.createElement("option");
+        o.value = it.value;
+        o.textContent = it.label;
+        s.appendChild(o);
+      }
+    }
+  }
+
+  pickFolderBtn.addEventListener("click", () => dirPicker.click());
+
+  dirPicker.addEventListener("change", () => {
+    clearLog();
+    folderFiles = new Map();
+    fileListDisplay = [];
+    let count = 0;
+
+    const files = dirPicker.files || [];
+    for (const f of files) {
+      const ext = extFromMime(f.type) || extFromName(f.name);
+      if (!ext) continue;
+      folderFiles.set(f.name.toLowerCase(), f);
+      fileListDisplay.push({ label: baseName(f.name), value: f.name });
+      count++;
+    }
+    fileListDisplay.sort((a,b)=>a.label.localeCompare(b.label,'vi',{sensitivity:'base'}));
+    fillSelects();
+    folderHint.textContent = count ? (count + " tệp") : "Chưa chọn";
+    log(count ? ("Đã nạp " + count + " ảnh từ thư mục.") : "Không tìm thấy ảnh hợp lệ trong thư mục.", count ? "ok" : "err");
+  });
+
+  function resolveAssignees(nguoiLapName) {
+    const map = {
+      "Bùi Đăng Quốc Huy": { kiemtra: "Nguyễn Văn Linh", xn1: "Nguyễn Văn Linh", xn2: "Vũ Duy Minh", pheduyet: "Vũ Duy Minh" },
+      "Đào Tuấn Kỳ": { kiemtra: "Nguyễn Văn Hiếu", xn1: "Nguyễn Văn Hiếu", xn2: "Vũ Duy Minh", pheduyet: "Vũ Duy Minh" },
+      "Đỗ Quang Long": { kiemtra: "Nguyễn Văn Hiếu", xn1: "Nguyễn Văn Hiếu", xn2: "Vũ Duy Minh", pheduyet: "Vũ Duy Minh" },
+      "Đỗ Thế Cường": { kiemtra: "Nguyễn Văn Hiếu", xn1: "Nguyễn Văn Hiếu", xn2: "Vũ Duy Minh", pheduyet: "Vũ Duy Minh" },
+      "Hà Mỹ Linh": { kiemtra: "Nguyễn Văn Hiếu", xn1: "Nguyễn Văn Hiếu", xn2: "Vũ Duy Minh", pheduyet: "Vũ Duy Minh" },
+      "Lại Quốc Lộc": { kiemtra: "Nguyễn Văn Linh", xn1: "Nguyễn Văn Linh", xn2: "Vũ Duy Minh", pheduyet: "Vũ Duy Minh" },
+      "Lê Ngọc Ánh": { kiemtra: "Nguyễn Văn Linh", xn1: "Nguyễn Văn Linh", xn2: "Vũ Duy Minh", pheduyet: "Vũ Duy Minh" },
+      "Lê Thị Thảo": { kiemtra: "Nguyễn Văn Hiếu", xn1: "Nguyễn Văn Hiếu", xn2: "Vũ Duy Minh", pheduyet: "Vũ Duy Minh" },
+      "Nguyễn Hữu Thịnh": { kiemtra: "Nguyễn Văn Hiếu", xn1: "Nguyễn Văn Hiếu", xn2: "Vũ Duy Minh", pheduyet: "Vũ Duy Minh" },
+      "Nguyễn Thị Hiền": { kiemtra: "Nguyễn Văn Hiếu", xn1: "Nguyễn Văn Hiếu", xn2: "Vũ Duy Minh", pheduyet: "Vũ Duy Minh" },
+      "Phạm Thành Trung Kiên": { kiemtra: "Nguyễn Văn Hiếu", xn1: "Nguyễn Văn Hiếu", xn2: "Vũ Duy Minh", pheduyet: "Vũ Duy Minh" },
+      "Phạm Thị Minh": { kiemtra: "Nguyễn Văn Linh", xn1: "Nguyễn Văn Linh", xn2: "Vũ Duy Minh", pheduyet: "Vũ Duy Minh" },
+      "Thái Thị Giang": { kiemtra: "Nguyễn Văn Linh", xn1: "Nguyễn Văn Linh", xn2: "Vũ Duy Minh", pheduyet: "Vũ Duy Minh" },
+      "Trần Hiếu Nghĩa": { kiemtra: "Nguyễn Văn Linh", xn1: "Nguyễn Văn Linh", xn2: "Vũ Duy Minh", pheduyet: "Vũ Duy Minh" },
+      "Vũ Thị Hằng": { kiemtra: "Nguyễn Văn Hiếu", xn1: "Nguyễn Văn Hiếu", xn2: "Vũ Duy Minh", pheduyet: "Vũ Duy Minh" },
+      "Vũ Thị Thanh Hiền": { kiemtra: "Nguyễn Văn Hiếu", xn1: "Nguyễn Văn Hiếu", xn2: "Vũ Duy Minh", pheduyet: "Vũ Duy Minh" }
+    };
+    const fallback = { kiemtra: "Nguyễn Văn Hiếu", xn1: "Nguyễn Văn Linh", xn2: "Vũ Duy Minh", pheduyet: "Vũ Duy Minh" };
+    const m = map[nguoiLapName] || fallback;
+    return { nguoilap: nguoiLapName, ...m };
+  }
+
+  runBtn.addEventListener("click", async () => {
+    clearLog();
+    try {
+      if (!excelInput.files || excelInput.files.length === 0) {
+        throw new Error("Chọn file Excel (.xlsx).");
+      }
+      const nguoiLapChon = personNguoiLap ? personNguoiLap.value : "";
+      if (!nguoiLapChon) throw new Error('Chọn "Người lập".');
+
+      log("Đang đọc Excel...", "m");
+      const wb = new ExcelJS.Workbook();
+      const excelBuf = await excelInput.files[0].arrayBuffer();
+      await wb.xlsx.load(excelBuf);
+
+      const ws = wb.getWorksheet("Form");
+      if (!ws) throw new Error('Không tìm thấy sheet "Form".');
+
+      const actors = resolveAssignees(nguoiLapChon);
+      const size = { width: 120, height: 90 };
+      const today = new Date();
+
+      for (const role of Object.keys(actors)) {
+        const name = actors[role];
+
+        ws.getCell(ROLE_NAME_CELLS[role]).value = name;
+        ws.getCell(ROLE_DATE_CELLS[role]).value = today;
+        ws.getCell(ROLE_DATE_CELLS[role]).numFmt = "DD/MM/YYYY";
+
+        try {
+          const url = "Sign_files/" + encodeURIComponent(name) + ".jpg";
+          const resp = await fetch(url);
+          if (!resp.ok) throw new Error("HTTP " + resp.status);
+          const ab = await resp.arrayBuffer();
+          const base64 = arrayBufferToBase64(ab);
+          const imageId = wb.addImage({ base64, extension: "jpeg" });
+
+          const cell = ROLE_CELLS[role];
+          const { row, col } = a1ToRC(cell);
+          ws.addImage(imageId, { tl: { col: col - 1, row: row - 1 }, ext: size, editAs: "oneCell" });
+          log(`Gắn ảnh ${name} vào ${cell}`, "ok");
+        } catch (e) {
+          log(`Không tìm thấy ảnh cho ${name} (bỏ qua)`, "warn");
+        }
+      }
+
+      const code = generateSecurityCode();
+      ws.getCell("A39").value = code;
+      log("Mã bảo mật: " + code, "ok");
+
+      log("Đang ghi tệp .xlsx...", "m");
+      const out = await wb.xlsx.writeBuffer();
+      const orig = excelInput.files[0].name.replace(/\.xlsx$/i, "");
+      const fnameOut = orig + "_signed.xlsx";
+      saveAs(new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), fnameOut);
+      log("Đã tải về: " + fnameOut, "ok");
+    } catch (e) {
+      log("Lỗi: " + e.message, "err");
+    }
+  });
+
+  fillSelects();
+  fillNguoiLapSelect();
+})();
+</script>
+</body>
+</html>
